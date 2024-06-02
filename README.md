@@ -1,4 +1,4 @@
-# Classic_Models_MyVersion
+# Classical_Models_MyVersion
 
 ## ViT
 

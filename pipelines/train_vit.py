@@ -10,6 +10,7 @@ import torchvision
 import torchvision.transforms as transforms
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# print(device)
 # 计算准确率
 def get_acc(output, label):
     total = output.shape[0]
