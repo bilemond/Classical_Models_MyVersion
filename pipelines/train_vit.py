@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from models.Simple_ViT import SimpleViT
 import argparse
-import utils.train_utils as train_utils
+import utils as train_utils
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
@@ -25,6 +25,7 @@ def imshow(img):
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
+
 def train(net, train_data, valid_data, num_epochs, optimizer, criterion):
     prev_time = datetime.now()
     for epoch in range(num_epochs):
@@ -97,7 +98,7 @@ if __name__ == '__main__':
     # Set device
     device = args.device
     seed = args.seed
-    train_utils.seed_everything(seed)
+    train_utils.set_seed(seed)
 
     # 加载和预处理数据集
     trans_train = transforms.Compose(

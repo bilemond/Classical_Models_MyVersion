@@ -8,6 +8,7 @@
 datasets/
 dataset/
 dev/
+pretrain/
 .idea/
 test.py
 test.sh
