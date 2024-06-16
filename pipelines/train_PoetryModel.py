@@ -10,7 +10,7 @@ import utils as train_utils
 import os
 
 def prepareData():
-    datas = np.load(r"D:\MyPhd\2-Class-phd1-2\深度学习\作业\实验3_202318013229058_刘梦迪\tang.npz", allow_pickle=True)
+    datas = np.load(r"D:\MyPhd\2-MyResearch\0github\Classical_Models_MyVersion\dataset\tang_poetry\tang.npz", allow_pickle=True)
     data = datas['data']
     ix2word = datas['ix2word'].item()
     word2ix = datas['word2ix'].item()
