@@ -6,6 +6,7 @@ from models.utils.LayerNorm import PreNorm
 from models.utils.feed_forward import PositionwiseFeedForward
 from utils import pair
 
+
 # helpers
 
 class Attention(nn.Module):
@@ -54,6 +55,7 @@ class Transformer(nn.Module):
             x = ff(x) + x
         return x
 
+
 class SimpleViT(nn.Module):
     def __init__(self, *, image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, pool='cls', channels=3,
                  dim_head=64, dropout=0., emb_dropout=0.):
@@ -87,14 +89,14 @@ class SimpleViT(nn.Module):
         x = self.to_patch_embedding(img)
         b, n, _ = x.shape
 
-        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b = b)
+        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)
         x = torch.cat((cls_tokens, x), dim=1)
         x += self.pos_embedding[:, :(n + 1)]
         x = self.dropout(x)
 
         x = self.transformer(x)
 
-        x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
+        x = x.mean(dim=1) if self.pool == 'mean' else x[:, 0]
 
         x = self.to_latent(x)
         return self.mlp_head(x)

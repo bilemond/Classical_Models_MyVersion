@@ -4,6 +4,7 @@ import torch
 import utils as train_utils
 from torch.utils.data import DataLoader
 from dataset.zh2EnDataset import zh2EnDataset
+from models.Transformer_based_TranslateZh2En import TranslateZh2En
 from tqdm import tqdm
 
 if __name__ == '__main__':

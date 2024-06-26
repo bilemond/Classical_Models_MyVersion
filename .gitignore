@@ -1,14 +1,11 @@
-*.pt
-*.ipynb
-*.gif
-*.mp4
-*.out
-*.csv
-datasets/
-dataset/
+data/
+cifar10/
+NiuTrans/
+sample-submission-version/
+tang_poetry/
+
 dev/
 pretrain/
-.idea/
 test.py
 test.sh
 logs2/
@@ -92,6 +89,7 @@ docs/_build/
 target/
 
 # Jupyter Notebook
+*.ipynb
 .ipynb_checkpoints
 
 # pyenv
@@ -158,6 +156,11 @@ cython_debug/
 *.pth
 *.tflite
 *.ckpt
+*.gif
+*.mp4
+*.out
+*.csv
+
 # Add other data/weights/extensions your project might use.
 
 # IDE specific settings

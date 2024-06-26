@@ -3,16 +3,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 import argparse
-import copy
 from models.utils.feed_forward import PositionwiseFeedForward
+from models.attention.multi_head import MultiHeadedAttention
+from models.embedding.position import PositionalEmbedding
 from utils import clones
 
 
-class TranslateEn2Zh(nn.Module):
+class TranslateZh2En(nn.Module):
     """
     英文翻译为中文的模型, 通用的Encoder和Decoder框架
     """
-    def __init__(self, encoder, decoder, src_embedding, dst_embedding, generator):
+
+    def __init__(self, head_num, embedding_dim, hidden_num, size, dropout, decoder_dim, enVocabLen, zhVocabLen, N=6):
         """
         构造函数, 使用Encoder和Decoder通用框架实现一个Transformer模型
         :param encoder: 编码器, 本例中使用Transformer的Encoder
@@ -21,12 +23,14 @@ class TranslateEn2Zh(nn.Module):
         :param dst_embedding: 目标语言的embedding
         :param generator: 将Decoder输入的隐状态输入一个全连和softmax用于输出概率
         """
-        super(TranslateEn2Zh, self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
-        self.src_embedding = src_embedding
-        self.dst_embedding = dst_embedding
-        self.generator = generator
+        super(TranslateZh2En, self).__init__()
+        self.encoder = TransformerEncoder(size=size, head_num=head_num, embedding_dim=embedding_dim, hidden_num=hidden_num, dropout=dropout, N=N)
+        self.decoder = TransformerDecoder(size=size, head_num=head_num, embedding_dim=embedding_dim, hidden_num=hidden_num, dropout=dropout, N=N)
+        self.positon = PositionalEncoding(embedding_dim, dropout)
+        self.src_embedding = nn.Sequential(Embeddings(embedding_dim, zhVocabLen), self.positon)
+        self.dst_embedding = nn.Sequential(Embeddings(embedding_dim, enVocabLen), self.positon)
+        self.generator = Generator(decoder_dim=decoder_dim, vocab_len=enVocabLen)
+
 
     def forward(self, english_seq, chinese_seq, english_mask, chinese_mask):
         """
@@ -41,36 +45,24 @@ class TranslateEn2Zh(nn.Module):
         # chinese_seq.shape=(batch_size, seq_len)
         # english_mask.shape=(batch_size, 1, seq_len)
         # chinese_mask.shape=(batch_size, seq_len, seq_len)
-        memory = self.encode(english_seq, english_mask)
+        memory = self.encode(chinese_seq=chinese_seq, chinese_mask=chinese_mask)
         # memory.shape=(batch_size, seq_len, embedding_dim)
-        output = self.decode(memory=memory, chinese_seq=chinese_seq, english_mask=english_mask, chinese_mask=chinese_mask)
+        output = self.decode(memory=memory, english_seq=english_seq, english_mask=english_mask,
+                             chinese_mask=chinese_mask)
         return output
 
-    def encode(self, english_seq, english_mask):
-        """
-        Transformer的编码器
-        :param english_seq: 英文序列
-        :param english_mask:
-        :return:
-        """
-        return self.encoder(self.src_embedding(english_seq), english_mask)
+    def encode(self, chinese_seq, chinese_mask):
+        return self.encoder(self.src_embedding(chinese_seq), chinese_mask)
 
-    def decode(self, memory, english_mask, chinese_seq ,chinese_mask):
-        """
-        Transformer的解码器
-        :param memory: 应该是encoder编码后的输出
-        :param english_mask: 英文序列mask
-        :param chinese_seq: 中文序列
-        :param chinses_mask: 中文序列mask
-        :return:
-        """
-        return self.decoder(self.dst_embedding(chinese_seq), memory, english_mask, chinese_mask)
+    def decode(self, memory, chinese_mask, english_seq, english_mask):
+        return self.decoder(self.dst_embedding(english_seq), memory, chinese_mask, english_mask)
 
 
 class Generator(nn.Module):
     """
     根据Decoder输出的隐藏状态输出一个词
     """
+
     def __init__(self, decoder_dim, vocab_len):
         """
         generator的构造函数
@@ -91,12 +83,14 @@ class Generator(nn.Module):
         # log_softmax + NLLLoss 效果类似与 softmax + CrossEntropyLoss
         return F.log_softmax(proj, dim=-1)
 
+
 class TransformerEncoder(nn.Module):
     """
     Transformer的Encoder部分
     由6个EncoderLayer堆叠而成，而每个EncoderLayer又包含一个self-attention层和全连层
     """
-    def __init__(self, encode_layer, N):
+
+    def __init__(self, size, head_num, embedding_dim, hidden_num, dropout, N=6):
         """
         构造函数
         :param encode_layer: encode_layer, 包含一个self-attention层和一个全连层
@@ -104,9 +98,10 @@ class TransformerEncoder(nn.Module):
         """
         super(TransformerEncoder, self).__init__()
         # 6层encode_layer
-        self.layers = clones(encode_layer, 6)
+        self.EncodeLayer = EncodeLayer(head_num, embedding_dim, hidden_num, size, dropout)
+        self.layers = clones(self.EncodeLayer, N)
         # 再加一层Norm层
-        self.norm = nn.LayerNorm(encode_layer.size)
+        self.norm = nn.LayerNorm(self.EncodeLayer.size)
 
     def forward(self, x, mask):
         """
@@ -123,12 +118,14 @@ class TransformerEncoder(nn.Module):
         # 最后加一层Normalization层
         return self.norm(x)
 
+
 class EncodeLayer(nn.Module):
     """
     transformer中Encoder部分的encode layer，一共6个encode layer组成一个Encoder
     一个encode layer包含两个子层, 每个子层包括self-attention、feed_forward等操作
     """
-    def __init__(self, size, self_attention, feed_forward, dropout):
+
+    def __init__(self, head_num, embedding_dim, hidden_num, size, dropout):
         """
         构造函数
         :param size:
@@ -138,8 +135,8 @@ class EncodeLayer(nn.Module):
         :return:
         """
         super(EncodeLayer, self).__init__()
-        self.self_attention = self_attention
-        self.feed_forward = feed_forward
+        self.self_attention = MultiHeadedAttention(head_num=head_num, d_model=embedding_dim, dropout=dropout)
+        self.feed_forward = PositionwiseFeedForward(embedding_dim=embedding_dim, hidden_num=hidden_num, dropout=dropout)
         # 两个子层
         self.sublayer = clones(SubLayer(size, dropout), 2)
         self.size = size
@@ -167,6 +164,7 @@ class SubLayer(nn.Module):
     Encode Layer或者Decode Layer的一个子层(通用结构)
     这里会构造LayerNorm 和 Dropout，但是Self-Attention 和 Dense 不在这里构造，作为参数传入
     """
+
     def __init__(self, size, dropout):
         """
         构造函数
@@ -192,19 +190,23 @@ class SubLayer(nn.Module):
         # 为了方便SubEncodeLayer层的复用，self-attention和feed_forward作为参数<function_layer>
         return x + self.dropout(function_layer(self.norm(x)))
 
+
 class TransformerDecoder(nn.Module):
     """
     Transformer的Decoder端，包含6个DecodeLayer, 每个DecoderLayer又包含三个子层，分别是self-attention层，attention层和feed_foraward层
     """
-    def __init__(self, decode_layer, N):
+
+    def __init__(self, size, head_num, embedding_dim, hidden_num, dropout, N=6):
         """
         构造函数
         :param layer: DecodeLayer
         :param N: Transformer中的Deocder包含6个Deocde层，所以N为6
         """
         super(TransformerDecoder, self).__init__()
-        self.layers = clones(decode_layer, N)
-        self.norm = nn.LayerNorm(decode_layer.size)
+        self.decode_layer = DecodeLayer(size, head_num, embedding_dim, hidden_num, dropout)
+        self.layers = clones(self.decode_layer, N)
+        self.norm = nn.LayerNorm(size)
+
 
     def forward(self, x, memory, src_mask, dst_mask):
         """
@@ -223,12 +225,14 @@ class TransformerDecoder(nn.Module):
             x = layer(x, memory, src_mask, dst_mask)
         return self.norm(x)
 
+
 class DecodeLayer(nn.Module):
     """
     Transformer的Decoder的一个Decode层
     包含三个子层，分别对应self-attention, attention(与Encoder编码的memory做attention), feed_forward
     """
-    def __init__(self, size, self_attenton, attention, feed_forward, dropout):
+
+    def __init__(self, size, head_num, embedding_dim, hidden_num, dropout):
         """
         构造函数
         :param size:
@@ -239,10 +243,10 @@ class DecodeLayer(nn.Module):
         """
         super(DecodeLayer, self).__init__()
         self.size = size
-        self.self_attention = self_attenton
-        self.attention = attention
-        self.feed_forward = feed_forward
+        self.attention = MultiHeadedAttention(head_num=head_num, d_model=embedding_dim, dropout=dropout)
         self.sublayer = clones(SubLayer(size, dropout), 3)
+        self.self_attention = MultiHeadedAttention(head_num=head_num, d_model=embedding_dim, dropout=dropout)
+        self.feed_forward = PositionwiseFeedForward(embedding_dim=embedding_dim, hidden_num=hidden_num, dropout=dropout)
 
     def forward(self, x, memory, src_mask, dst_mask):
         """
@@ -268,66 +272,11 @@ class DecodeLayer(nn.Module):
         return output
 
 
-class MultiHeadAttention(nn.Module):
-    """
-    多头注意力机制的实现
-    """
-    def __init__(self, head_num, multi_output_dim, dropout=0.1):
-        """
-        构造函数
-        :param head_num: head的数目
-        :param d_model: Multi-Head输出的维度，就等于embedding_dim
-        :param dropout: dropout率
-        """
-        super(MultiHeadAttention, self).__init__()
-        assert multi_output_dim % head_num == 0
-        self.d_k = multi_output_dim // head_num
-        self.head_num = head_num
-        # 下面的四个线性层的前三个相当于对Q，K, V分别乘以一个权重矩阵，最后一个对计算完的整体结果加一个权重矩阵
-        self.linears = clones(nn.Linear(multi_output_dim, multi_output_dim), 4)
-        self.attention = None
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, query, key, value, mask=None):
-        """
-        前向传播函数
-        :param query: Q
-        :param key: K
-        :param value: V
-        :param mask:
-        :return:
-        """
-        # query.shape=key.shape=value.shape=(batch_size, seq_len, embedding_dim)
-        # mask.shape=(batch_size, 1, seq_len) in Encoder(self-attention)
-        # mask.shape=(batch_size, seq_len, seq_len) in Decoder(self-attention)
-        # 注意这里的embedding_dim = multi_output_dim，为了保证后面计算的一致性
-        if mask is not None:
-            # 扩维，原本mask.shap = (batch_size, 1, seq_len)
-            # 扩充之后变为(batch_size, 1, 1, seq_len)
-            mask = mask.unsqueeze(1)
-            # mask.shape=(batch_size, 1, 1, seq_len)
-            # 由于广播机制，所有head的mask都一样
-        batch_size = query.size(0)
-        # 首先使用线性变换，然后将multi_output_dim分配给head_num个头，每个头为 d_k = multi_output_dim / head_num
-        # 经过线性变换后，query，key，value等的维度不变，还是(batch_size, seq_len, embedding_dim)
-        # 在经过view操作后，query.shape=(batch_size, seq_len, head_num, d_k)
-        # 再经过transpose操作后，query.shape=(batch_size, head_num, seq_len, d_k)和attention函数要求的维度一致
-        query, key, value = [l(x).view(batch_size, -1, self.head_num, self.d_k).transpose(1, 2) for l, x in zip(self.linears, (query, key, value))]
-        # key.shape=value.shape=query.shape=(batch_size, head_num, seq_len, d_k)
-        x, self.attention = attention(query, key, value, mask=mask, dropout=self.dropout)
-        # attention 函数操作完之后x.shape=(batch_size ,head_num, seq_len, d_k)
-        # self.attention.shape=(batch_size, head_num ,seq_len, seq_len)
-
-        # 下面将multi head的最后一个维度d_k拼接在一起，然后再使用一个线性变换，最终embendding_dim维度不变
-        x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.head_num * self.d_k)
-        # 此时的x.shape=(batch_size, seq_len, embedding_dim)
-        return self.linears[-1](x)
-
-
 class Embeddings(nn.Module):
     """
     原始输出的seq是每个word在vocab中的index的序列，需要embedding序列
     """
+
     def __init__(self, embedding_dim, vocab_len):
         """
         构造函数
@@ -347,19 +296,11 @@ class PositionalEncoding(nn.Module):
     """
     位置编码
     """
+
     def __init__(self, embedding_dim, dropout, max_len=5000):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-
-        # 在log空间中计算位置编码
-        positionalEncode = torch.zeros(max_len, embedding_dim)
-        position = torch.arange(0, max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, embedding_dim, 2) * -(math.log(10000.0) / embedding_dim))
-        positionalEncode[:, 0::2] = torch.sin(position * div_term)
-        positionalEncode[:, 1::2] = torch.cos(position * div_term)
-        positionalEncode = positionalEncode.unsqueeze(0)
-        # 创建一个buffer，将pe保存下来
-        self.register_buffer('pe', positionalEncode)
+        self.PositionalEmbedding = PositionalEmbedding(embedding_dim, max_len)
 
     def forward(self, x):
         """
@@ -367,13 +308,13 @@ class PositionalEncoding(nn.Module):
         :param x: 输入
         :return:
         """
-        x = x + torch.tensor(self.pe[:, :x.size(1)], requires_grad=False)
+        x = x + self.PositionalEmbedding(x)
         return self.dropout(x)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', type=str, default="train",  help="train or test")
+    parser.add_argument('--mode', type=str, default="train", help="train or test")
     parser.add_argument('--batch_size', type=int, default=64, help='minibatch size')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--num_epochs', type=int, default=1, help='number of epochs')
@@ -383,34 +324,8 @@ if __name__ == '__main__':
     parser.add_argument('--hidden_num', type=int, default=2048, help="hidden neural number")
     parser.add_argument('--dropout', type=float, default=0.2, help="dropout rate")
     parser.add_argument('--padding', type=int, default=50, help="padding length")
-    parser.add_argument('--model_path', type=str, \
-                        default='../data/model/lr:0.001-batch_size:128-epochs:10-embedding_dim:256-head_num:8-bleu:0.17267120509754869-date:2020-12-06-01-02-translate_params.pkl', help="model path")
+
     args = parser.parse_args()
     device = torch.device('cuda:{}'.format(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-    cp = copy.deepcopy
-    multiHeadAttention = MultiHeadAttention(head_num=args.head_num, multi_output_dim=args.embedding_dim).to(device)
-    feedForward = PositionwiseFeedForward(embedding_dim=args.embedding_dim, hidden_num=args.hidden_num,
-                                          dropout=args.dropout).to(device)
-    position = PositionalEncoding(embedding_dim=args.embedding_dim, dropout=args.dropout).to(device)
-
-    # 构建Encoder
-    encodeLayer = EncodeLayer(args.embedding_dim, cp(multiHeadAttention), cp(feedForward), dropout=args.dropout).to(
-        device)
-    transformerEncoder = TransformerEncoder(encode_layer=encodeLayer, N=6).to(device)
-
-    # 构建Decoder
-    decodeLayer = DecodeLayer(args.embedding_dim, cp(multiHeadAttention), cp(multiHeadAttention), cp(feedForward),
-                              args.dropout).to(device)
-    transformerDecoder = TransformerDecoder(decode_layer=decodeLayer, N=6).to(device)
-
-    # 构建srd_embedding
-    src_embedding = nn.Sequential(Embeddings(args.embedding_dim, enVocabLen), cp(position)).to(device)
-    dst_embedding = nn.Sequential(Embeddings(args.embedding_dim, zhVocabLen), cp(position)).to(device)
-
-    # 构建generator
-    generator = Generator(decoder_dim=args.embedding_dim, vocab_len=zhVocabLen).to(device)
-
-    # 构建transformer 机器翻译模型
-    translateEn2Zh = TranslateEn2Zh(encoder=transformerEncoder, decoder=transformerDecoder, src_embedding=src_embedding, \
-                                    dst_embedding=dst_embedding, generator=generator).to(device)
+    translateZh2En = TranslateZh2En().to(device)
