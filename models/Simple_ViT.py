@@ -1,38 +1,12 @@
-# ref: https://github.com/lucidrains/vit-pytorch/blob/main/vit_pytorch/vit.py
-
 import torch
 from torch import nn
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
+from models.utils.LayerNorm import PreNorm
+from models.utils.feed_forward import PositionwiseFeedForward
+from utils import pair
 
 # helpers
-def pair(t):
-    """
-    :return: t if t is a tuple, else (t, t)
-    """
-    return t if isinstance(t, tuple) else (t, t)
-
-class PreNorm(nn.Module):
-    def __init__(self, dim, fn):
-        super().__init__()
-        self.norm = nn.LayerNorm(dim)
-        self.fn = fn
-    def forward(self, x, **kwargs):
-        return self.fn(self.norm(x), **kwargs)
-
-class FeedForward(nn.Module):
-    def __init__(self, dim, hidden_dim, dropout=0.):
-        super(FeedForward, self).__init__()
-        self.net = nn.Sequential(
-            nn.Linear(dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, dim),
-            nn.Dropout(dropout)
-        )
-
-    def forward(self, x):
-        return self.net(x)
 
 class Attention(nn.Module):
     def __init__(self, dim, heads=8, dim_head=64, dropout=0.):
@@ -71,7 +45,7 @@ class Transformer(nn.Module):
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
                 PreNorm(dim, Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout)),
-                PreNorm(dim, FeedForward(dim, mlp_dim, dropout=dropout))
+                PreNorm(dim, PositionwiseFeedForward(dim, mlp_dim, dropout=dropout))
             ]))
 
     def forward(self, x):
@@ -92,7 +66,7 @@ class SimpleViT(nn.Module):
         assert pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
         self.to_patch_embedding = nn.Sequential(
             Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1=patch_height, p2=patch_width),
-            nn.Linear(patch_dim, dim), # 一个patch表示为(p1 p2 c)=patch_dim, 转换成dim维度
+            nn.Linear(patch_dim, dim),  # 一个patch表示为(p1 p2 c)=patch_dim, 转换成dim维度
         )
 
         self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))

@@ -3,7 +3,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from torch import nn
 from torch import optim
-from models.PoetryModel import PoetryModel
+from models.Lstm_based_PoetryModel import PoetryModel
 import argparse
 import time
 import utils as train_utils

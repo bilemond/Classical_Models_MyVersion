@@ -2,7 +2,6 @@
 *.ipynb
 *.gif
 *.mp4
-#*.png
 *.out
 *.csv
 datasets/
