@@ -6,6 +6,7 @@ import argparse
 from models.utils.feed_forward import PositionwiseFeedForward
 from models.attention.multi_head import MultiHeadedAttention
 from models.embedding.position import PositionalEmbedding
+from models.utils.sublayer import SublayerConnection as SubLayer
 from utils import clones
 
 
@@ -159,36 +160,6 @@ class EncodeLayer(nn.Module):
         return self.sublayer[1](x, self.feed_forward)
 
 
-class SubLayer(nn.Module):
-    """
-    Encode Layer或者Decode Layer的一个子层(通用结构)
-    这里会构造LayerNorm 和 Dropout，但是Self-Attention 和 Dense 不在这里构造，作为参数传入
-    """
-
-    def __init__(self, size, dropout):
-        """
-        构造函数
-        :param size:
-        :param dropout:
-        """
-        super(SubLayer, self).__init__()
-        self.norm = nn.LayerNorm(size)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x, function_layer):
-        """
-        前向函数
-        :param x: 传入数据
-        :param sublayer: 功能层，Encoder中可以为self-attention 或者 feed_forward中的一个
-        :return:
-        """
-        # x.shape=(batch_size, seq_len, embedding_dim)
-
-        # x + 对应那个残差操作
-        # 这个dropout和原文不太一样，加在这里是为了防止过拟合吧
-        # layer normalization的位置也和原文不太一样，原文是放在最后，这里是放在最前面并且在最后一层再加一层layer normalization
-        # 为了方便SubEncodeLayer层的复用，self-attention和feed_forward作为参数<function_layer>
-        return x + self.dropout(function_layer(self.norm(x)))
 
 
 class TransformerDecoder(nn.Module):
@@ -328,4 +299,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     device = torch.device('cuda:{}'.format(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-    translateZh2En = TranslateZh2En().to(device)
+    translateZh2En = TranslateZh2En(args.head_num, args.embedding_dim, args.hidden_num, size, args.dropout, decoder_dim, enVocabLen, zhVocabLen, N=6).to(device)

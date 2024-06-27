@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from models.Simple_ViT import SimpleViT
+from models.ViT_based_Classification import SimpleViT
 import argparse
 import utils as train_utils
 from datetime import datetime
