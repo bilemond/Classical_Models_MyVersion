@@ -3,6 +3,19 @@ from torch.utils.data import Dataset
 import os
 import numpy as np
 
+def idx_to_sentence(arr, vocab, insert_space=False):
+    res = ''
+    first_word = True
+    for id in arr:
+        word = vocab[id.item()]
+
+        if insert_space and not first_word:
+            res += ' '
+        first_word = False
+
+        res += word
+
+    return res
 
 class zh2EnDataset(Dataset):
     def __init__(self, PAD_ID, padding=128, mode='train'):

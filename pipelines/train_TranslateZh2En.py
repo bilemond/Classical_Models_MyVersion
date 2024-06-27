@@ -5,15 +5,18 @@ import torch.nn as nn
 import utils as train_utils
 from torch.utils.data import DataLoader
 from datasets.zh2EnDataset import zh2EnDataset
+from datasets.zh2EnDataset import idx_to_sentence
 from models.base_models._transformer import Transformer
+from models.utils.metric import compute_bleu
 from tqdm import tqdm
 import time
 import numpy as np
 
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pipeline_name", type=str, default="Bert_NMT")
+    parser.add_argument("--pipeline_name", type=str, default="Transformer_NMT")
     parser.add_argument("--model_name", type=str, default="Bert_NMT")
 
     # Training settings
@@ -25,6 +28,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_epochs", type=int, default=60)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--mode", type=str, default="train")  # train or inference
+    parser.add_argument("--max_length", type=int, default=50)
     args = parser.parse_args()
 
     save_path = f"../results/{args.pipeline_name}/"
@@ -37,9 +41,9 @@ if __name__ == '__main__':
     batch_size = args.batch_size
     PAD_ID = 0
 
-    train_data = zh2EnDataset(PAD_ID=PAD_ID, padding=50, mode='train')
-    dev_data = zh2EnDataset(PAD_ID=PAD_ID, padding=50, mode='dev')
-    test_data = zh2EnDataset(PAD_ID=PAD_ID, padding=50, mode='test')
+    train_data = zh2EnDataset(PAD_ID=PAD_ID, padding=args.max_length, mode='train')
+    dev_data = zh2EnDataset(PAD_ID=PAD_ID, padding=args.max_length, mode='dev')
+    test_data = zh2EnDataset(PAD_ID=PAD_ID, padding=args.max_length, mode='test')
     train_data_loader = DataLoader(train_data, batch_size, shuffle=True)
     dev_data_loader = DataLoader(dev_data, batch_size, shuffle=True)
     test_data_loader = DataLoader(test_data, batch_size, shuffle=True)
@@ -91,54 +95,84 @@ if __name__ == '__main__':
                           f' loss: {loss.item()} acc: {acc.item()}')
                 cnter += 1
 
-            # valid
-            with torch.no_grad():
-                blue_socres = []
+            if epoch % 10 == 0 and epoch != 0:
+                filename = save_path + f"models_epoch{epoch}.pth"
+                torch.save(model.state_dict(), filename)
 
-                for valid_index, (src, trg_input, trg_label, len_trg_line) in enumerate(tqdm(dev_data_loader)):
-                    # englishSeq.shape=(batch_size, paded_seq_len)
-                    # chineseSeq.shape=(batch_size, paded_seq_len)
-                    # chineseSeqY.shape=(batch_size, padded_seq_len)
-                    src = src.to(device)
-                    trg_input = trg_input.to(device)
-                    trg_label = trg_label.to(device)
+            # # valid
+            # with torch.no_grad():
+            #     blue_socres = []
+            #
+            #     for valid_index, (src, trg_input, trg_label, len_trg_line) in enumerate(tqdm(dev_data_loader)):
+            #         # englishSeq.shape=(batch_size, paded_seq_len)
+            #         # chineseSeq.shape=(batch_size, paded_seq_len)
+            #         # chineseSeqY.shape=(batch_size, padded_seq_len)
+            #         src = src.to(device)
+            #         trg_input = trg_input.to(device)
+            #         trg_label = trg_label.to(device)
+            #
+            #         src_mask = (src != PAD_ID).unsqueeze(-2)
+            #         # src_mask.shape=(batch_size, 1, seq_len)
+            #         memory = translateEn2Zh.encode(src, src_mask)
+            #         # memory.shape=(batch_size, seq_len, embedding_dim)
+            #         translate = torch.ones(args.batch_size, 1).fill_(0).type_as(src.data)
+            #         # translate_ = trg_label[:, 0]
+            #         # ys.shape=(1, 1)
+            #         for i in range(args.padding):
+            #             translate_mask = make_std_mask(translate, 3)
+            #             out = translateEn2Zh.decode(memory, src_mask, translate, translate_mask)
+            #             prob = translateEn2Zh.generator(out[:, -1])
+            #             _, next_word = torch.max(prob, dim=1)
+            #             next_word = next_word.unsqueeze(1)
+            #             translate = torch.cat([translate, next_word], dim=1)
+            #             # translate_ = chineseSeqY[:, :]
+            #         blue_socres += compute_bleu(translate, trg_label, len_trg_line)
+            #         if (valid_index + 1) % 1 == 0:
+            #             reference_sentence = trg_label[0].tolist()
+            #             translate_sentence = translate[0].tolist()
+            #             src_sentence = src[0].tolist()
+            #             reference_sentence_len = len_trg_line.tolist()[0]
+            #             if 1 in translate_sentence:
+            #                 index = translate_sentence.index(1)
+            #             else:
+            #                 index = len(translate_sentence)
+            #             print("原文: {}".format(" ".join([src_id2word[x] for x in src_sentence])))
+            #             print("机翻译文: {}".format("".join([trg_id2word[x] for x in translate_sentence[:index]])))
+            #             print("参考译文: {}".format(
+            #                 "".join([trg_id2word[x] for x in reference_sentence[:reference_sentence_len]])))
+            #     epoch_bleu = np.sum(blue_socres) / len(blue_socres)
+            #     bleu.append(epoch_bleu)
 
-                    src_mask = (src != PAD_ID).unsqueeze(-2)
-                    # src_mask.shape=(batch_size, 1, seq_len)
-                    memory = translateEn2Zh.encode(src, src_mask)
-                    # memory.shape=(batch_size, seq_len, embedding_dim)
-                    translate = torch.ones(args.batch_size, 1).fill_(0).type_as(src.data)
-                    # translate_ = trg_label[:, 0]
-                    # ys.shape=(1, 1)
-                    for i in range(args.padding):
-                        translate_mask = make_std_mask(translate, 3)
-                        out = translateEn2Zh.decode(memory, src_mask, translate, translate_mask)
-                        prob = translateEn2Zh.generator(out[:, -1])
-                        _, next_word = torch.max(prob, dim=1)
-                        next_word = next_word.unsqueeze(1)
-                        translate = torch.cat([translate, next_word], dim=1)
-                        # translate_ = chineseSeqY[:, :]
-                    blue_socres += compute_bleu(translate, trg_label, len_trg_line)
-                    if (valid_index + 1) % 1 == 0:
-                        reference_sentence = trg_label[0].tolist()
-                        translate_sentence = translate[0].tolist()
-                        src_sentence = src[0].tolist()
-                        reference_sentence_len = len_trg_line.tolist()[0]
-                        if 1 in translate_sentence:
-                            index = translate_sentence.index(1)
-                        else:
-                            index = len(translate_sentence)
-                        print("原文: {}".format(" ".join([src_id2word[x] for x in src_sentence])))
-                        print("机翻译文: {}".format("".join([trg_id2word[x] for x in translate_sentence[:index]])))
-                        print("参考译文: {}".format(
-                            "".join([trg_id2word[x] for x in reference_sentence[:reference_sentence_len]])))
-                epoch_bleu = np.sum(blue_socres) / len(blue_socres)
-                bleu.append(epoch_bleu)
 
 
 
     elif args.mode == "inference":
-        pass
+        model = Transformer(src_vocab_size=SrcVocabLen, dst_vocab_size=TrgVocabLen, pad_idx=PAD_ID, d_model=512, d_ff=2048,
+                        n_layers=6, heads=8, dropout=0.2, max_seq_len=args.max_length)
+        model.to(device)
+        model.eval()
+
+        filename = save_path + f"models_epoch{args.n_epochs}.pth"
+        model.load_state_dict(torch.load(filename))
+
+        # my_input = ['we', 'should', 'protect', 'environment']
+        my_input = ['我', '爱', '你']
+        x_batch = torch.LongTensor([[src_word2id[x] for x in my_input]]).to(device)
+
+        cn_sentence = idx_to_sentence(x_batch[0], src_id2word, True)
+        print(cn_sentence)
+
+        y_input = torch.ones(batch_size, args.max_length,
+                             dtype=torch.long).to(device) * PAD_ID
+        y_input[0] = src_word2id['<S>']
+        # y_input = y_batch
+        with torch.no_grad():
+            for i in range(1, y_input.shape[1]):
+                y_hat = model(x_batch, y_input)
+                for j in range(batch_size):
+                    y_input[j, i] = torch.argmax(y_hat[j, i - 1])
+        output_sentence = idx_to_sentence(y_input[0], trg_id2word, True)
+        print(output_sentence)
 
 
 
