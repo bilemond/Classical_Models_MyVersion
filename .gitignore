@@ -181,5 +181,7 @@ Thumbs.db
 
 # Others
 logs/
+runs/
+results/
 *.sublime-workspace
 test/

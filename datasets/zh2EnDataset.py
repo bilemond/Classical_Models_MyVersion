@@ -1,7 +1,5 @@
 import torch
 from torch.utils.data import Dataset
-import os
-import numpy as np
 
 def idx_to_sentence(arr, vocab, insert_space=False):
     res = ''
@@ -88,8 +86,8 @@ class zh2EnDataset(Dataset):
 
         print("Read {} lines".format(len(src_lines)))
         print("preprocessing data...")
-        src_lines = [['<SOS>'] + line.strip().split() + ['<EOS>'] for line in src_lines]
-        trg_lines = [['<SOS>'] + line.strip().split() + ['<EOS>'] for line in trg_lines]
+        src_lines = [['<s>'] + line.strip().split() + ['</s>'] for line in src_lines]
+        trg_lines = [['<s>'] + line.strip().split() + ['</s>'] for line in trg_lines]
 
         return src_lines, trg_lines
 
@@ -97,8 +95,8 @@ class zh2EnDataset(Dataset):
         with open(self.src_vocab_filename, 'r', encoding='utf-8') as f1, open(self.trg_vocab_filename, 'r', encoding='utf-8') as f2:
             src_vocab_list = f1.readlines()
             trg_vocab_list = f2.readlines()
-        src_vocab_list.insert(self.PAD_ID, '<PAD>')
-        trg_vocab_list.insert(self.PAD_ID, '<PAD>')
+        src_vocab_list.insert(self.PAD_ID, '<pad>')
+        trg_vocab_list.insert(self.PAD_ID, '<pad>')
 
         src_vocab = type('Vocabulary', (), {})()
         src_vocab.word2id = {word.strip(): idx for idx, word in enumerate(src_vocab_list)}
