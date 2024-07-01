@@ -137,7 +137,6 @@ if __name__ == '__main__':
     if args.mode == "train":
         train_losses, test_losses, bleus = [], [], []
 
-        # print_interval = 100
         cnter = 0
         best_loss = float('inf')
 
